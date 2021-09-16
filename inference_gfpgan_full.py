@@ -1,11 +1,12 @@
 import argparse
 import cv2
-import glob
+from pathlib import Path
 import numpy as np
 import os
 import torch
 from facexlib.utils.face_restoration_helper import FaceRestoreHelper
 from torchvision.transforms.functional import normalize
+from tqdm import tqdm
 
 from archs.gfpganv1_arch import GFPGANv1
 from basicsr.utils import img2tensor, imwrite, tensor2img
@@ -20,9 +21,9 @@ def restoration(gfpgan,
                 suffix=None,
                 paste_back=False):
     # read image
-    img_name = os.path.basename(img_path)
-    print(f'Processing {img_name} ...')
-    basename, _ = os.path.splitext(img_name)
+    # img_name = os.path.basename(img_path)
+    # print(f'Processing {img_name} ...')
+    # basename, _ = os.path.splitext(img_name)
     input_img = cv2.imread(img_path, cv2.IMREAD_COLOR)
     face_helper.clean_all()
 
@@ -34,8 +35,8 @@ def restoration(gfpgan,
         # get face landmarks for each face
         face_helper.get_face_landmarks_5(only_center_face=only_center_face, pad_blur=False)
         # align and warp each face
-        save_crop_path = os.path.join(save_root, 'cropped_faces', img_name)
-        face_helper.align_warp_face(save_crop_path)
+        # save_crop_path = os.path.join(save_root, 'cropped_faces', img_name)
+        face_helper.align_warp_face(None) #save_crop_path)
 
     # face restoration
     for idx, cropped_face in enumerate(face_helper.cropped_faces):
@@ -56,20 +57,20 @@ def restoration(gfpgan,
         restored_face = restored_face.astype('uint8')
         face_helper.add_restored_face(restored_face)
 
-        if suffix is not None:
-            save_face_name = f'{basename}_{idx:02d}_{suffix}.png'
-        else:
-            save_face_name = f'{basename}_{idx:02d}.png'
-        save_restore_path = os.path.join(save_root, 'restored_faces', save_face_name)
-        imwrite(restored_face, save_restore_path)
+        # if suffix is not None:
+        #     save_face_name = f'{basename}_{idx:02d}_{suffix}.png'
+        # else:
+        #     save_face_name = f'{basename}_{idx:02d}.png'
+        # save_restore_path = os.path.join(save_root, 'restored_faces', save_face_name)
+        # imwrite(restored_face, save_restore_path)
 
         # save cmp image
-        cmp_img = np.concatenate((cropped_face, restored_face), axis=1)
-        imwrite(cmp_img, os.path.join(save_root, 'cmp', f'{basename}_{idx:02d}.png'))
+        # cmp_img = np.concatenate((cropped_face, restored_face), axis=1)
+        # imwrite(cmp_img, os.path.join(save_root, 'cmp', f'{basename}_{idx:02d}.png'))
 
     if not has_aligned and paste_back:
         face_helper.get_inverse_affine(None)
-        save_restore_path = os.path.join(save_root, 'restored_imgs', img_name)
+        save_restore_path = img_path.replace('preprocessed', save_root)
         # paste each restored face to the input image
         face_helper.paste_faces_to_input_image(save_restore_path)
 
@@ -89,7 +90,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.test_path.endswith('/'):
         args.test_path = args.test_path[:-1]
-    save_root = 'results/'
+    save_root = 'upsample_2'
     os.makedirs(save_root, exist_ok=True)
 
     # initialize the GFP-GAN
@@ -115,12 +116,12 @@ if __name__ == '__main__':
     face_helper = FaceRestoreHelper(
         args.upscale_factor, face_size=512, crop_ratio=(1, 1), det_model='retinaface_resnet50', save_ext='png')
 
-    img_list = sorted(glob.glob(os.path.join(args.test_path, '*')))
-    for img_path in img_list:
+    img_list = list(Path(args.test_path).glob('**/*jpg'))
+    for img_path in tqdm(img_list):
         restoration(
             gfpgan,
             face_helper,
-            img_path,
+            str(img_path),
             save_root,
             has_aligned=args.aligned,
             only_center_face=args.only_center_face,
